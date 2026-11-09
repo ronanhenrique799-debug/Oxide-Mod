@@ -1,0 +1,61 @@
+name: Build Oxide Mod Menu
+
+on:
+  push:
+    branches: [ main, master ]
+  workflow_dispatch:
+
+jobs:
+  build-mod:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Baixar Codigo
+        uses: actions/checkout@v4
+
+      - name: Configurar Java JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Configurar Android SDK e NDK
+        uses: android-actions/setup-android@v3
+
+      - name: Instalar NDK e CMake
+        run: |
+          sdkmanager --install "ndk;25.2.9519653" "cmake;3.22.1" "platforms;android-33" "build-tools;33.0.2"
+
+      - name: Compilar Biblioteca C++ (libkanha_oxide.so)
+        run: |
+          mkdir -p build
+          $ANDROID_HOME/cmake/3.22.1/bin/cmake \
+            -H. \
+            -Bbuild \
+            -DANDROID_ABI=arm64-v8a \
+            -DANDROID_PLATFORM=android-24 \
+            -DANDROID_NDK=$ANDROID_HOME/ndk/25.2.9519653 \
+            -DCMAKE_TOOLCHAIN_FILE=$ANDROID_HOME/ndk/25.2.9519653/build/cmake/android.toolchain.cmake
+          $ANDROID_HOME/cmake/3.22.1/bin/cmake --build build
+
+      - name: Compilar Menu Flutuante Java para DEX (classes.dex)
+        run: |
+          mkdir -p out_classes out_dex
+          javac -source 1.8 -target 1.8 \
+            -bootclasspath $ANDROID_HOME/platforms/android-33/android.jar \
+            -d out_classes java/com/kanha/oxide/MenuOverlay.java
+          $ANDROID_HOME/build-tools/33.0.2/d8 \
+            --lib $ANDROID_HOME/platforms/android-33/android.jar \
+            --output out_dex \
+            out_classes/com/kanha/oxide/*.class
+
+      - name: Empacotar Arquivos Prontos
+        run: |
+          mkdir -p release_pack/lib/arm64-v8a
+          cp build/libkanha_oxide.so release_pack/lib/arm64-v8a/
+          cp out_dex/classes.dex release_pack/classes2.dex
+
+      - name: Disponibilizar Download no GitHub
+        uses: actions/upload-artifact@v4
+        with:
+          name: Kanha-Oxide-Mod-Files
+          path: release_pack/
